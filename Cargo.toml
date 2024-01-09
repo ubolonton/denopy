@@ -10,9 +10,7 @@ authors = [
 name = "denopy"
 crate-type = ["cdylib"]
 
-[dependencies.deno_core]
-version = "0.242.0"
-
-[dependencies.pyo3]
-version = "0.19.0"
-features = ["abi3-py38", "anyhow"]
+[dependencies]
+tokio = { version = "1.35.1", features = ["full"] }
+pyo3 = { version = "0.19.0", features = ["abi3-py38", "anyhow"] }
+deno_core = "0.242.0"

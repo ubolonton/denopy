@@ -180,6 +180,7 @@ version = "0.1.0"
 dependencies = [
  "deno_core",
  "pyo3",
+ "tokio",
 ]
 
 [[package]]

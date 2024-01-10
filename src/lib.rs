@@ -3,6 +3,7 @@ use std::sync::OnceLock;
 
 use deno_core::{FsModuleLoader, JsRuntime, ModuleCode, ModuleId, ModuleSpecifier, RuntimeOptions};
 use pyo3::prelude::*;
+use pyo3::types::PyTuple;
 
 use types::JSFunction;
 
@@ -58,9 +59,16 @@ impl Runtime {
         })
     }
 
-    fn call(&mut self, py: Python<'_>, function: &JSFunction) -> PyResult<PyObject> {
+    #[pyo3(signature = (function, *args))]
+    fn call(&mut self, py: Python<'_>, function: &JSFunction, args: &PyTuple) -> PyResult<PyObject> {
+        let args = {
+            let scope = &mut self.js_runtime.handle_scope();
+            args.iter()
+                .map(|o| types::py_to_v8(py, o, scope))
+                .collect::<PyResult<Vec<_>>>()?
+        };
         TOKIO_RUNTIME.get().unwrap().block_on(async {
-            let result = self.js_runtime.call(&function.inner).await?;
+            let result = self.js_runtime.call_with_args(&function.inner, &args).await?;
             types::v8_to_py(py, result, &mut self.js_runtime.handle_scope())
         })
     }

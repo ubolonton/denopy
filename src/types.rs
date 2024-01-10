@@ -1,19 +1,21 @@
-use deno_core::v8::{Global, HandleScope, Value};
+use deno_core::v8::{Function, Global, HandleScope, Local, Value};
 use pyo3::{IntoPy, pyclass, PyObject, PyResult, Python};
 
 #[pyclass(unsendable, module="denopy")]
-struct Function {
-    function: Global<Value>
+pub struct JSFunction {
+    pub inner: Global<Function>
 }
 
 pub fn v8_to_py(py: Python<'_>, global_value: Global<Value>, scope: &mut HandleScope) -> PyResult<PyObject> {
-    let value = global_value.open(scope);
+    let value = Local::new(scope, global_value);
     if value.is_null_or_undefined() {
         Ok(py.None())
     } else if value.is_string() {
         Ok(value.to_rust_string_lossy(scope).into_py(py))
     } else if value.is_function() {
-        Ok(Function { function: global_value }.into_py(py))
+        let lf: Local<Function> = value.try_into().unwrap();
+        let inner = Global::new(scope, lf);
+        Ok(JSFunction { inner }.into_py(py))
     } else {
         let typ = value.type_of(scope).to_rust_string_lossy(scope);
         let repr = value.to_rust_string_lossy(scope);

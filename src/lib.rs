@@ -2,8 +2,9 @@ use std::rc::Rc;
 use std::sync::OnceLock;
 
 use deno_core::{FsModuleLoader, JsRuntime, ModuleCode, ModuleId, ModuleSpecifier, RuntimeOptions};
-use deno_core::futures::TryFutureExt;
 use pyo3::prelude::*;
+
+use types::JSFunction;
 
 mod types;
 
@@ -54,6 +55,13 @@ impl Runtime {
         TOKIO_RUNTIME.get().unwrap().block_on(async {
             self.js_runtime.mod_evaluate(module_id).await?;
             Ok(module_id.into_py(py))
+        })
+    }
+
+    fn call(&mut self, py: Python<'_>, function: &JSFunction) -> PyResult<PyObject> {
+        TOKIO_RUNTIME.get().unwrap().block_on(async {
+            let result = self.js_runtime.call(&function.inner).await?;
+            types::v8_to_py(py, result, &mut self.js_runtime.handle_scope())
         })
     }
 }

@@ -4,8 +4,6 @@ use deno_core::v8::{Function, Global, HandleScope, Local, Value};
 use pyo3::{IntoPy, PyAny, pyclass, PyObject, PyResult, Python};
 use pyo3::types::PyString;
 
-// TODO: Make these sendable, by making sure that inner members are only accessed from the thread they were created on.
-
 #[pyclass(unsendable, module = "denopy")]
 #[derive(Clone)]
 pub struct JSFunction {

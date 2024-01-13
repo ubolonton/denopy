@@ -4,7 +4,7 @@ use deno_core::{FsModuleLoader, JsRuntime, ModuleCode, ModuleId, ModuleSpecifier
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
-use types::JSFunction;
+use types::JsFunction;
 
 mod types;
 
@@ -58,7 +58,7 @@ impl Runtime {
     }
 
     #[pyo3(signature = (function, *args))]
-    fn call(&mut self, py: Python<'_>, function: &JSFunction, args: &PyTuple) -> PyResult<PyObject> {
+    fn call(&mut self, py: Python<'_>, function: &JsFunction, args: &PyTuple) -> PyResult<PyObject> {
         let args = {
             let scope = &mut self.js_runtime.handle_scope();
             args.iter()

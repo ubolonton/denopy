@@ -8,9 +8,13 @@ use types::JsFunction;
 
 mod types;
 
-/// A wrapper around Deno's JsRuntime.
+/// A wrapper around deno_core's JsRuntime.
+///
 /// Objects of this class can only be used from the thread they were created on.
 /// If they are sent to another thread, they will panic when used.
+///
+/// Each thread should create only one Runtime object.
+/// It is possible to create more, but that's not very useful.
 #[pyclass(unsendable, module = "denopy")]
 struct Runtime {
     js_runtime: JsRuntime,
@@ -21,6 +25,8 @@ struct Runtime {
 impl Runtime {
     #[new]
     fn new() -> PyResult<Self> {
+        // TODO: Figure out what happens if this is called from a thread that is not a child of the thread where the
+        //  module was loaded.
         let js_runtime = JsRuntime::new(RuntimeOptions {
             module_loader: Some(Rc::new(FsModuleLoader)),
             ..Default::default()

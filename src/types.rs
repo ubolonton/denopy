@@ -1,7 +1,7 @@
 use deno_core::_ops::RustToV8;
 use deno_core::v8;
 use deno_core::v8::{Function, Global, HandleScope, Local, Value};
-use pyo3::{IntoPy, PyAny, pyclass, PyObject, PyResult, Python};
+use pyo3::{IntoPy, PyAny, pyclass, pymethods, PyObject, PyResult, Python};
 
 #[pyclass(unsendable, module = "denopy")]
 #[derive(Clone)]
@@ -13,6 +13,14 @@ pub struct JsFunction {
 #[derive(Clone)]
 pub struct JsValue {
     inner: Global<Value>,
+    type_repr: String
+}
+
+#[pymethods]
+impl JsValue {
+    fn __repr__(&self) -> String {
+        format!("<JSValue [{}]>", self.type_repr)
+    }
 }
 
 pub fn v8_to_py(py: Python<'_>, global_value: Global<Value>, scope: &mut HandleScope) -> PyResult<PyObject> {
@@ -35,7 +43,10 @@ pub fn v8_to_py(py: Python<'_>, global_value: Global<Value>, scope: &mut HandleS
     } else if let Result::<Local<Function>, _>::Ok(function) = value.try_into() {
         Ok(JsFunction { inner: Global::new(scope, function) }.into_py(py))
     } else {
-        Ok(JsValue { inner: Global::new(scope, value) }.into_py(py))
+        Ok(JsValue {
+            inner: Global::new(scope, value),
+            type_repr: value.type_of(scope).to_rust_string_lossy(scope),
+        }.into_py(py))
     }
 }
 

@@ -31,7 +31,8 @@ impl Runtime {
             module_loader: Some(Rc::new(FsModuleLoader)),
             ..Default::default()
         });
-        let tokio_runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+        let tokio_runtime = tokio::runtime::Builder::new_current_thread()
+            .max_blocking_threads(1).enable_all().build()?;
         Ok(Self { js_runtime, tokio_runtime })
     }
 

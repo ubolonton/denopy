@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
 use deno_core::{FsModuleLoader, JsRuntime, ModuleCode, ModuleId, ModuleSpecifier, RuntimeOptions};
+use deno_core::v8::{Global, Local};
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
@@ -38,7 +39,8 @@ impl Runtime {
 
     fn eval(&mut self, py: Python<'_>, source_code: &str) -> PyResult<PyObject> {
         let result = self.js_runtime.execute_script("<eval>", ModuleCode::from(source_code.to_owned()))?;
-        types::v8_to_py(py, result, &mut self.js_runtime.handle_scope())
+        let scope = &mut self.js_runtime.handle_scope();
+        types::v8_to_py(py, Local::new(scope, result), scope)
     }
 
     fn load_main_module(&mut self, py: Python<'_>, path: &str) -> PyResult<PyObject> {
@@ -74,7 +76,8 @@ impl Runtime {
         };
         self.tokio_runtime.block_on(async {
             let result = self.js_runtime.call_with_args(&function.inner, &args).await?;
-            types::v8_to_py(py, result, &mut self.js_runtime.handle_scope())
+            let scope = &mut self.js_runtime.handle_scope();
+            types::v8_to_py(py, Local::new(scope, result), scope)
         })
     }
 }

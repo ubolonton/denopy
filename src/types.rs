@@ -2,6 +2,7 @@ use deno_core::_ops::RustToV8;
 use deno_core::v8;
 use deno_core::v8::{Function, Global, HandleScope, Local, Value};
 use pyo3::{IntoPy, PyAny, pyclass, pymethods, PyObject, PyResult, Python};
+use pyo3::types::PyList;
 
 #[pyclass(unsendable, module = "denopy")]
 #[derive(Clone)]
@@ -23,10 +24,9 @@ impl JsValue {
     }
 }
 
-pub fn v8_to_py(py: Python<'_>, global_value: Global<Value>, scope: &mut HandleScope) -> PyResult<PyObject> {
-    // We need to use predicates to check the type first, instead of casting, since JavaScript's type casting rules are
-    // rather weird.
-    let value = global_value.to_v8(scope);
+pub fn v8_to_py(py: Python<'_>, value: Local<Value>, scope: &mut HandleScope) -> PyResult<PyObject> {
+    // We need to use predicates to check the type first, instead of casting, since JavaScript's
+    // type casting rules are rather weird.
     // TODO: undefined should not be None.
     if value.is_null_or_undefined() {
         Ok(py.None())
@@ -42,6 +42,16 @@ pub fn v8_to_py(py: Python<'_>, global_value: Global<Value>, scope: &mut HandleS
         Ok(value.number_value(scope).unwrap().into_py(py))
     } else if let Result::<Local<Function>, _>::Ok(function) = value.try_into() {
         Ok(JsFunction { inner: Global::new(scope, function) }.into_py(py))
+    } else if value.is_array() {
+        let object = value.to_object(scope).unwrap();
+        let length_str = v8::String::new(scope, "length").unwrap().into();
+        let length = object.get(scope, length_str).unwrap().uint32_value(scope).unwrap();
+        let list = PyList::empty(py);
+        for i in 0..length {
+            let v = object.get_index(scope, i).unwrap();
+            list.append(v8_to_py(py, v, scope)?)?;
+        }
+        list.extract()
     } else {
         Ok(JsValue {
             inner: Global::new(scope, value),

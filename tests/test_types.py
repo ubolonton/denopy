@@ -29,5 +29,7 @@ def test_functions(runtime):
 
 def test_roundtrips(runtime):
     identity = runtime.eval("x => x")
-    for v in ["abc", 1, 5.3, True, False, None, [], [2, 3.4, "x"]]:
+    for v in ["abc", 1, 5.3, True, False, None,
+              [], [2, 3.4, "x"],
+              {}, {'a': 5, 'b': ['x', dict(c=None)]}]:
         assert runtime.call(identity, v) == v

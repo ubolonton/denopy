@@ -153,27 +153,10 @@ jobs:
       - uses: actions/download-artifact@v3
         with:
           name: wheels
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-      - name: Log in to CodeArtifact
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
-          AWS_CODEARTIFACT_REGION: ${{ vars.AWS_CODEARTIFACT_REGION }}
-          AWS_CODEARTIFACT_DOMAIN: ${{ vars.AWS_CODEARTIFACT_DOMAIN }}
-          AWS_CODEARTIFACT_REPO: ${{ vars.AWS_CODEARTIFACT_REPO }}
-          AWS_CODEARTIFACT_USER: ${{ vars.AWS_CODEARTIFACT_USER }}
-        run: |
-          echo "MATURIN_REPOSITORY_URL=https://${AWS_CODEARTIFACT_DOMAIN}-${AWS_ACCOUNT_ID}.d.codeartifact.${AWS_CODEARTIFACT_REGION}.amazonaws.com/pypi/${AWS_CODEARTIFACT_REPO}/" >> $GITHUB_ENV
-          echo "MATURIN_USERNAME=$AWS_CODEARTIFACT_USER" >> $GITHUB_ENV
-
-          MATURIN_PASSWORD=$(aws codeartifact get-authorization-token --region $AWS_CODEARTIFACT_REGION --domain $AWS_CODEARTIFACT_DOMAIN --query authorizationToken --output text)
-          echo "::add-mask::$MATURIN_PASSWORD"
-          echo "MATURIN_PASSWORD=$MATURIN_PASSWORD" >> $GITHUB_ENV
       - name: Publish to PyPI
         uses: PyO3/maturin-action@v1
+        env:
+          MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         with:
           command: upload
           args: --non-interactive --skip-existing *

@@ -80,6 +80,14 @@ pub fn py_to_v8<'s>(object: &PyAny, scope: &mut HandleScope<'s>) -> PyResult<Loc
         Ok(v8::Integer::new(scope, i).to_int32(scope).unwrap().into())
     } else if let Ok(f) = object.extract::<f64>() {
         Ok(v8::Number::new(scope, f).into())
+    } else if let Ok(dict) = object.downcast::<PyDict>() {
+        let object = v8::Object::new(scope);
+        for (k, o) in dict.iter() {
+            let prop = py_to_v8(k, scope)?;
+            let prop_value = py_to_v8(o, scope)?;
+            object.set(scope, prop, prop_value);
+        }
+        Ok(object.into())
     } else if let Ok(list) = object.downcast::<PyList>() {
         let array = v8::Array::new(scope, list.len().try_into()?);
         for (i, o) in list.iter().enumerate() {

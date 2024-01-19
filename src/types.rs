@@ -1,12 +1,12 @@
 use deno_core::v8;
-use deno_core::v8::{Function, Global, HandleScope, Local, Value};
+use deno_core::v8::{Global, HandleScope, Local, Value};
 use pyo3::{IntoPy, PyAny, pyclass, pymethods, PyObject, PyResult, Python};
-use pyo3::types::PyList;
+use pyo3::types::{PyDict, PyList};
 
 #[pyclass(unsendable, module = "denopy")]
 #[derive(Clone)]
 pub struct JsFunction {
-    pub inner: Global<Function>,
+    pub inner: Global<v8::Function>,
 }
 
 #[pyclass(unsendable, module = "denopy")]
@@ -39,18 +39,28 @@ pub fn v8_to_py(py: Python<'_>, value: Local<Value>, scope: &mut HandleScope) ->
         Ok(value.uint32_value(scope).unwrap().into_py(py))
     } else if value.is_number() {
         Ok(value.number_value(scope).unwrap().into_py(py))
-    } else if let Result::<Local<Function>, _>::Ok(function) = value.try_into() {
+    } else if let Result::<Local<v8::Function>, _>::Ok(function) = value.try_into() {
         Ok(JsFunction { inner: Global::new(scope, function) }.into_py(py))
-    } else if value.is_array() {
-        let object = value.to_object(scope).unwrap();
-        let length_str = v8::String::new(scope, "length").unwrap().into();
-        let length = object.get(scope, length_str).unwrap().uint32_value(scope).unwrap();
+    } else if let Result::<Local<v8::Array>, _>::Ok(array) = value.try_into() {
         let list = PyList::empty(py);
-        for i in 0..length {
-            let v = object.get_index(scope, i).unwrap();
+        for i in 0..array.length() {
+            let v = array.get_index(scope, i).unwrap();
             list.append(v8_to_py(py, v, scope)?)?;
         }
         list.extract()
+    } else if value.is_object() {
+        let object = value.to_object(scope).unwrap();
+        let props = object.get_own_property_names(scope, Default::default()).unwrap();
+        let dict = PyDict::new(py);
+        for i in 0..props.length() {
+            let prop = props.get_index(scope, i).unwrap();
+            let prop_value = object.get(scope, prop).unwrap();
+            dict.set_item(
+                v8_to_py(py, prop, scope)?,
+                v8_to_py(py, prop_value, scope)?,
+            )?;
+        }
+        dict.extract()
     } else {
         Ok(JsValue {
             inner: Global::new(scope, value),

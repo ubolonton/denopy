@@ -71,7 +71,9 @@ impl Runtime {
         let args = {
             let scope = &mut self.js_runtime.handle_scope();
             args.iter()
-                .map(|object| types::py_to_v8(py, object, scope))
+                .map(|object| {
+                    types::py_to_v8(object, scope).map(|v| Global::new(scope, v))
+                })
                 .collect::<PyResult<Vec<_>>>()?
         };
         self.tokio_runtime.block_on(async {

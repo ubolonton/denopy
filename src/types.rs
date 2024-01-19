@@ -1,4 +1,3 @@
-use deno_core::_ops::RustToV8;
 use deno_core::v8;
 use deno_core::v8::{Function, Global, HandleScope, Local, Value};
 use pyo3::{IntoPy, PyAny, pyclass, pymethods, PyObject, PyResult, Python};
@@ -60,32 +59,28 @@ pub fn v8_to_py(py: Python<'_>, value: Local<Value>, scope: &mut HandleScope) ->
     }
 }
 
-pub fn py_to_v8(py: Python<'_>, object: &PyAny, scope: &mut HandleScope) -> PyResult<Global<Value>> {
+pub fn py_to_v8<'s>(object: &PyAny, scope: &mut HandleScope<'s>) -> PyResult<Local<'s, Value>> {
     if object.is_none() {
-        Ok(v8::null(scope))
-            .map(Into::<Local<_>>::into)
-            .map(|value| Global::new(scope, value))
+        Ok(v8::null(scope).into())
     } else if let Ok(s) = object.extract::<&str>() {
-        Ok(v8::String::new(scope, s).unwrap())
-            .map(Into::<Local<_>>::into)
-            .map(|value| Global::new(scope, value))
+        Ok(v8::String::new(scope, s).unwrap().into())
     } else if let Ok(b) = object.extract::<bool>() {
-        Ok(v8::Boolean::new(scope, b))
-            .map(Into::<Local<_>>::into)
-            .map(|value| Global::new(scope, value))
+        Ok(v8::Boolean::new(scope, b).into())
     } else if let Ok(i) = object.extract::<i32>() {
-        Ok(v8::Integer::new(scope, i).to_int32(scope).unwrap())
-            .map(Into::<Local<_>>::into)
-            .map(|value| Global::new(scope, value))
+        Ok(v8::Integer::new(scope, i).to_int32(scope).unwrap().into())
     } else if let Ok(f) = object.extract::<f64>() {
-        Ok(v8::Number::new(scope, f))
-            .map(Into::<Local<_>>::into)
-            .map(|value| Global::new(scope, value))
+        Ok(v8::Number::new(scope, f).into())
+    } else if let Ok(list) = object.downcast::<PyList>() {
+        let array = v8::Array::new(scope, list.len().try_into()?);
+        for (i, o) in list.iter().enumerate() {
+            let v = py_to_v8(o, scope)?;
+            array.set_index(scope, i.try_into()?, v);
+        }
+        Ok(array.into())
     } else if let Ok(f) = object.extract::<JsFunction>() {
-        Ok(f.inner.to_v8(scope))
-            .map(|value| Global::new(scope, value))
+        Ok(Local::new(scope, f.inner).into())
     } else if let Ok(v) = object.extract::<JsValue>() {
-        Ok(v.inner)
+        Ok(Local::new(scope, v.inner).into())
     } else {
         unimplemented!()
     }

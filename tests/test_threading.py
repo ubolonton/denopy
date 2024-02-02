@@ -1,3 +1,5 @@
+import threading
+
 import denopy
 
 
@@ -25,3 +27,26 @@ def test_not_segfault_on_many_runtime_objects():
         #   - Is assigned to a variable, but the variable is then deleted: `del r`.
         #   - Is added directly to a list without a variable: `runtimes.append(denopy.Runtime())`.
         r = denopy.Runtime()
+
+
+def test_one_thread_per_runtime():
+    runtime = denopy.Runtime()
+    result = {}
+
+    def _eval():
+        try:
+            runtime.eval("1")
+        except BaseException as e:
+            result['error'] = e
+
+    thread = threading.Thread(target=_eval)
+    thread.start()
+    thread.join()
+    # TODO: Figure out a way to get the exception type.
+    assert "Runtime is unsendable, but sent to another thread" in str(result['error'])
+
+
+def test_one_runtime_per_thread():
+    runtime1 = denopy.Runtime()
+    runtime2 = denopy.Runtime()
+    assert runtime2 is runtime1

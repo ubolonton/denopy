@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use deno_core::{FsModuleLoader, JsRuntime, ModuleCode, ModuleId, ModuleSpecifier, RuntimeOptions};
@@ -11,21 +12,29 @@ mod types;
 
 /// A wrapper around deno_core's JsRuntime.
 ///
-/// Objects of this class can only be used from the thread they were created on.
+/// Instances of this class can only be used from the thread they were created on.
 /// If they are sent to another thread, they will panic when used.
 ///
-/// Each thread should create only one Runtime object.
-/// It is possible to create more, but that's not very useful.
+/// Each thread is associated with at most one instance. After the constructor is called once,
+/// subsequent calls on the same thread return the same instance.
 #[pyclass(unsendable, module = "denopy")]
 struct Runtime {
     js_runtime: JsRuntime,
     tokio_runtime: tokio::runtime::Runtime,
 }
 
+thread_local! {
+    static RUNTIME: RefCell<Option<Py<Runtime>>> = RefCell::new(None);
+}
+
 #[pymethods]
 impl Runtime {
     #[new]
-    fn new() -> PyResult<Self> {
+    fn new(py: Python<'_>) -> PyResult<Py<Self>> {
+        if let Some(runtime) = RUNTIME.with(|r| r.borrow().clone()) {
+            return Ok(runtime);
+        }
+
         // TODO: Figure out what happens if this is called from a thread that is not a child of the thread where the
         //  module was loaded.
         let js_runtime = JsRuntime::new(RuntimeOptions {
@@ -34,7 +43,9 @@ impl Runtime {
         });
         let tokio_runtime = tokio::runtime::Builder::new_current_thread()
             .max_blocking_threads(1).enable_all().build()?;
-        Ok(Self { js_runtime, tokio_runtime })
+        let runtime = Py::new(py, Self { js_runtime, tokio_runtime })?;
+        RUNTIME.with(|r| r.borrow_mut().replace(runtime.clone()));
+        Ok(runtime)
     }
 
     fn eval(&mut self, py: Python<'_>, source_code: &str) -> PyResult<PyObject> {
@@ -66,7 +77,7 @@ impl Runtime {
         })
     }
 
-    #[pyo3(signature = (function, *args))]
+    #[pyo3(signature = (function, * args))]
     fn call(&mut self, py: Python<'_>, function: &JsFunction, args: &PyTuple) -> PyResult<PyObject> {
         let args = {
             let scope = &mut self.js_runtime.handle_scope();

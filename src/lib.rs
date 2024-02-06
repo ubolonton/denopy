@@ -31,7 +31,9 @@ thread_local! {
 impl Runtime {
     #[new]
     fn new(py: Python<'_>) -> PyResult<Py<Self>> {
-        if let Some(runtime) = RUNTIME.with(|r| r.borrow().clone()) {
+        if let Some(runtime) = RUNTIME.with(|cell| {
+            cell.borrow().as_ref().map(|rt| rt.clone_ref(py))
+        }) {
             return Ok(runtime);
         }
 
@@ -44,7 +46,7 @@ impl Runtime {
         let tokio_runtime = tokio::runtime::Builder::new_current_thread()
             .max_blocking_threads(1).enable_all().build()?;
         let runtime = Py::new(py, Self { js_runtime, tokio_runtime })?;
-        RUNTIME.with(|r| r.borrow_mut().replace(runtime.clone()));
+        RUNTIME.with(|cell| cell.borrow_mut().replace(runtime.clone_ref(py)));
         Ok(runtime)
     }
 

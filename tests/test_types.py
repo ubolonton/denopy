@@ -25,6 +25,7 @@ def test_functions(runtime):
 
     js_sin = runtime.eval("Math.sin")
     assert runtime.call(js_sin, 1) == math.sin(1)
+    assert js_sin(2) == math.sin(2)
 
 
 def test_roundtrips(runtime):

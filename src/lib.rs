@@ -53,7 +53,9 @@ impl Runtime {
     fn eval(&mut self, py: Python<'_>, source_code: &str) -> PyResult<PyObject> {
         let result = self.js_runtime.execute_script("<eval>", ModuleCode::from(source_code.to_owned()))?;
         let scope = &mut self.js_runtime.handle_scope();
-        types::v8_to_py(py, Local::new(scope, result), scope)
+        RUNTIME.with(|cell| types::v8_to_py(
+            Local::new(scope, result), scope, cell.borrow().as_ref().unwrap(), py
+        ))
     }
 
     fn load_main_module(&mut self, py: Python<'_>, path: &str) -> PyResult<PyObject> {
@@ -92,7 +94,9 @@ impl Runtime {
         self.tokio_runtime.block_on(async {
             let result = self.js_runtime.call_with_args(&function.inner, &args).await?;
             let scope = &mut self.js_runtime.handle_scope();
-            types::v8_to_py(py, Local::new(scope, result), scope)
+            RUNTIME.with(|cell| types::v8_to_py(
+                Local::new(scope, result), scope, cell.borrow().as_ref().unwrap(), py
+            ))
         })
     }
 }

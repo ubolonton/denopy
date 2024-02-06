@@ -1,12 +1,23 @@
 use deno_core::v8;
 use deno_core::v8::{Global, HandleScope, Local, Value};
-use pyo3::{IntoPy, PyAny, pyclass, pymethods, PyObject, PyResult, Python};
-use pyo3::types::{PyDict, PyList};
+use pyo3::{IntoPy, Py, PyAny, pyclass, pymethods, PyObject, PyResult, Python};
+use pyo3::types::{PyDict, PyList, PyTuple};
+
+use crate::Runtime;
 
 #[pyclass(unsendable, module = "denopy")]
 #[derive(Clone)]
 pub struct JsFunction {
     pub inner: Global<v8::Function>,
+    runtime: Py<Runtime>,
+}
+
+#[pymethods]
+impl JsFunction {
+    #[pyo3(signature = (*args))]
+    fn __call__(&self, py: Python<'_>, args: &PyTuple) -> PyResult<PyObject> {
+        self.runtime.borrow_mut(py).call(py, self, args)
+    }
 }
 
 #[pyclass(unsendable, module = "denopy")]
@@ -23,7 +34,7 @@ impl JsValue {
     }
 }
 
-pub fn v8_to_py(py: Python<'_>, value: Local<Value>, scope: &mut HandleScope) -> PyResult<PyObject> {
+pub fn v8_to_py(value: Local<Value>, scope: &mut HandleScope, runtime: &Py<Runtime>, py: Python<'_>) -> PyResult<PyObject> {
     // We need to use predicates to check the type first, instead of casting, since JavaScript's
     // type casting rules are rather weird.
     // TODO: undefined should not be None.
@@ -40,12 +51,15 @@ pub fn v8_to_py(py: Python<'_>, value: Local<Value>, scope: &mut HandleScope) ->
     } else if value.is_number() {
         Ok(value.number_value(scope).unwrap().into_py(py))
     } else if let Result::<Local<v8::Function>, _>::Ok(function) = value.try_into() {
-        Ok(JsFunction { inner: Global::new(scope, function) }.into_py(py))
+        Ok(JsFunction {
+            inner: Global::new(scope, function),
+            runtime: runtime.clone_ref(py),
+        }.into_py(py))
     } else if let Result::<Local<v8::Array>, _>::Ok(array) = value.try_into() {
         let list = PyList::empty(py);
         for i in 0..array.length() {
             let v = array.get_index(scope, i).unwrap();
-            list.append(v8_to_py(py, v, scope)?)?;
+            list.append(v8_to_py(v, scope, runtime, py)?)?;
         }
         list.extract()
     } else if value.is_object() {
@@ -56,8 +70,8 @@ pub fn v8_to_py(py: Python<'_>, value: Local<Value>, scope: &mut HandleScope) ->
             let prop = props.get_index(scope, i).unwrap();
             let prop_value = object.get(scope, prop).unwrap();
             dict.set_item(
-                v8_to_py(py, prop, scope)?,
-                v8_to_py(py, prop_value, scope)?,
+                v8_to_py(prop, scope, runtime, py)?,
+                v8_to_py(prop_value, scope, runtime, py)?,
             )?;
         }
         dict.extract()

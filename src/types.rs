@@ -18,6 +18,15 @@ impl JsFunction {
     fn __call__(&self, py: Python<'_>, args: &PyTuple) -> PyResult<PyObject> {
         self.runtime.borrow_mut(py).call(py, self, args)
     }
+
+    fn __repr__(&self, py: Python<'_>) -> String {
+        let mut runtime = self.runtime.borrow_mut(py);
+        let scope = &mut runtime.js_runtime.handle_scope();
+        let f = self.inner.open(scope);
+        let name = f.get_name(scope).to_rust_string_lossy(scope);
+        let detail = f.to_detail_string(scope).unwrap().to_rust_string_lossy(scope);
+        format!("<JsFunction {name}: {detail}>")
+    }
 }
 
 #[pyclass(unsendable, module = "denopy")]

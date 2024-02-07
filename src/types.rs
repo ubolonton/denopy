@@ -5,6 +5,7 @@ use pyo3::types::{PyDict, PyList, PyTuple};
 
 use crate::Runtime;
 
+/// A JavaScript function that is callable from Python code.
 #[pyclass(unsendable, module = "denopy")]
 #[derive(Clone)]
 pub struct JsFunction {
@@ -16,7 +17,7 @@ pub struct JsFunction {
 impl JsFunction {
     #[pyo3(signature = (*args))]
     fn __call__(&self, py: Python<'_>, args: &PyTuple) -> PyResult<PyObject> {
-        self.runtime.borrow_mut(py).call(py, self, args)
+        self.runtime.borrow_mut(py).call(py, self, args, false)
     }
 
     fn __repr__(&self, py: Python<'_>) -> String {
@@ -31,6 +32,19 @@ impl JsFunction {
 
 #[pyclass(unsendable, module = "denopy")]
 #[derive(Clone)]
+pub struct JsObject {
+    inner: Global<v8::Object>,
+}
+
+#[pyclass(unsendable, module = "denopy")]
+#[derive(Clone)]
+pub struct JsArray {
+    inner: Global<v8::Array>,
+}
+
+/// A generic JavaScript value.
+#[pyclass(unsendable, module = "denopy")]
+#[derive(Clone)]
 pub struct JsValue {
     inner: Global<Value>,
     type_repr: String
@@ -43,7 +57,12 @@ impl JsValue {
     }
 }
 
-pub fn v8_to_py(value: Local<Value>, scope: &mut HandleScope, runtime: &Py<Runtime>, py: Python<'_>) -> PyResult<PyObject> {
+/// Converts a V8 value into a Python object.
+///
+/// Unless `unwrap` is true, complex types like objects and arrays are wrapped in opaque Python
+/// objects.
+pub fn v8_to_py(value: Local<Value>, scope: &mut HandleScope, runtime: &Py<Runtime>, py: Python<'_>,
+                unwrap: bool) -> PyResult<PyObject> {
     // We need to use predicates to check the type first, instead of casting, since JavaScript's
     // type casting rules are rather weird.
     // TODO: undefined should not be None.
@@ -65,25 +84,33 @@ pub fn v8_to_py(value: Local<Value>, scope: &mut HandleScope, runtime: &Py<Runti
             runtime: runtime.clone_ref(py),
         }.into_py(py))
     } else if let Result::<Local<v8::Array>, _>::Ok(array) = value.try_into() {
-        let list = PyList::empty(py);
-        for i in 0..array.length() {
-            let v = array.get_index(scope, i).unwrap();
-            list.append(v8_to_py(v, scope, runtime, py)?)?;
+        if unwrap {
+            let list = PyList::empty(py);
+            for i in 0..array.length() {
+                let v = array.get_index(scope, i).unwrap();
+                list.append(v8_to_py(v, scope, runtime, py, unwrap)?)?;
+            }
+            list.extract()
+        } else {
+            Ok(JsArray { inner: Global::new(scope, array)}.into_py(py))
         }
-        list.extract()
     } else if value.is_object() {
         let object = value.to_object(scope).unwrap();
-        let props = object.get_own_property_names(scope, Default::default()).unwrap();
-        let dict = PyDict::new(py);
-        for i in 0..props.length() {
-            let prop = props.get_index(scope, i).unwrap();
-            let prop_value = object.get(scope, prop).unwrap();
-            dict.set_item(
-                v8_to_py(prop, scope, runtime, py)?,
-                v8_to_py(prop_value, scope, runtime, py)?,
-            )?;
+        if unwrap {
+            let props = object.get_own_property_names(scope, Default::default()).unwrap();
+            let dict = PyDict::new(py);
+            for i in 0..props.length() {
+                let prop = props.get_index(scope, i).unwrap();
+                let prop_value = object.get(scope, prop).unwrap();
+                dict.set_item(
+                    v8_to_py(prop, scope, runtime, py, unwrap)?,
+                    v8_to_py(prop_value, scope, runtime, py, unwrap)?,
+                )?;
+            }
+            dict.extract()
+        } else {
+            Ok(JsObject { inner: Global::new(scope, object) }.into_py(py))
         }
-        dict.extract()
     } else {
         Ok(JsValue {
             inner: Global::new(scope, value),
@@ -92,6 +119,10 @@ pub fn v8_to_py(value: Local<Value>, scope: &mut HandleScope, runtime: &Py<Runti
     }
 }
 
+/// Converts a Python object into a V8 value.
+///
+/// Lists are converted into arrays.
+/// Dicts are converted into objects.
 pub fn py_to_v8<'s>(object: &PyAny, scope: &mut HandleScope<'s>) -> PyResult<Local<'s, Value>> {
     if object.is_none() {
         Ok(v8::null(scope).into())
@@ -119,6 +150,10 @@ pub fn py_to_v8<'s>(object: &PyAny, scope: &mut HandleScope<'s>) -> PyResult<Loc
         }
         Ok(array.into())
     } else if let Ok(f) = object.extract::<JsFunction>() {
+        Ok(Local::new(scope, f.inner).into())
+    } else if let Ok(f) = object.extract::<JsObject>() {
+        Ok(Local::new(scope, f.inner).into())
+    } else if let Ok(f) = object.extract::<JsArray>() {
         Ok(Local::new(scope, f.inner).into())
     } else if let Ok(v) = object.extract::<JsValue>() {
         Ok(Local::new(scope, v.inner).into())

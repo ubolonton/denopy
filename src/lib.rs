@@ -6,7 +6,7 @@ use deno_core::v8::{Global, Local};
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
-use types::JsFunction;
+use types::{JsFunction, JsArray, JsObject, JsValue};
 
 mod types;
 
@@ -50,11 +50,25 @@ impl Runtime {
         Ok(runtime)
     }
 
-    fn eval(&mut self, py: Python<'_>, source_code: &str) -> PyResult<PyObject> {
+    /// Convert a wrapped JavaScript value into its Python equivalent.
+    fn unwrap(&mut self, py: Python<'_>, wrapped_js_value: &PyAny) -> PyResult<PyObject> {
+        let scope = &mut self.js_runtime.handle_scope();
+        // TODO: Don't create JS values unnecessarily.
+        let js_value = types::py_to_v8(wrapped_js_value, scope)?;
+        RUNTIME.with(|cell| types::v8_to_py(
+            js_value, scope, cell.borrow().as_ref().unwrap(), py, true
+        ))
+    }
+
+    /// Evaluate a piece of JavaScript.
+    ///
+    /// The evaluation result may contain wrapped JavaScript values, unless 'unwrap' is True.
+    #[pyo3(signature = (source_code, *, unwrap=false))]
+    fn eval(&mut self, py: Python<'_>, source_code: &str, unwrap: bool) -> PyResult<PyObject> {
         let result = self.js_runtime.execute_script("<eval>", ModuleCode::from(source_code.to_owned()))?;
         let scope = &mut self.js_runtime.handle_scope();
         RUNTIME.with(|cell| types::v8_to_py(
-            Local::new(scope, result), scope, cell.borrow().as_ref().unwrap(), py
+            Local::new(scope, result), scope, cell.borrow().as_ref().unwrap(), py, unwrap
         ))
     }
 
@@ -81,8 +95,11 @@ impl Runtime {
         })
     }
 
-    #[pyo3(signature = (function, * args))]
-    fn call(&mut self, py: Python<'_>, function: &JsFunction, args: &PyTuple) -> PyResult<PyObject> {
+    /// Call a JavaScript function.
+    ///
+    /// The result may contain wrapped JavaScript values, unless 'unwrap' is True.
+    #[pyo3(signature = (function, *args, unwrap=false))]
+    fn call(&mut self, py: Python<'_>, function: &JsFunction, args: &PyTuple, unwrap: bool) -> PyResult<PyObject> {
         let args = {
             let scope = &mut self.js_runtime.handle_scope();
             args.iter()
@@ -95,7 +112,7 @@ impl Runtime {
             let result = self.js_runtime.call_with_args(&function.inner, &args).await?;
             let scope = &mut self.js_runtime.handle_scope();
             RUNTIME.with(|cell| types::v8_to_py(
-                Local::new(scope, result), scope, cell.borrow().as_ref().unwrap(), py
+                Local::new(scope, result), scope, cell.borrow().as_ref().unwrap(), py, unwrap
             ))
         })
     }
@@ -112,5 +129,9 @@ fn dbg_thread(msg: &str) {
 #[pymodule]
 fn denopy(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<Runtime>()?;
+    m.add_class::<JsArray>()?;
+    m.add_class::<JsFunction>()?;
+    m.add_class::<JsObject>()?;
+    m.add_class::<JsValue>()?;
     Ok(())
 }

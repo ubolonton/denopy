@@ -15,9 +15,9 @@ pub struct JsFunction {
 
 #[pymethods]
 impl JsFunction {
-    #[pyo3(signature = (*args))]
-    fn __call__(&self, py: Python<'_>, args: &PyTuple) -> PyResult<PyObject> {
-        self.runtime.borrow_mut(py).call(py, self, args, false)
+    #[pyo3(signature = (* args, unwrap = false, this = None))]
+    fn __call__(&self, py: Python<'_>, args: &PyTuple, unwrap: bool, this: Option<&PyAny>) -> PyResult<PyObject> {
+        self.runtime.borrow_mut(py).call(py, self, args, unwrap, this)
     }
 
     fn __repr__(&self, py: Python<'_>) -> String {
@@ -47,7 +47,7 @@ pub struct JsArray {
 #[derive(Clone)]
 pub struct JsValue {
     inner: Global<Value>,
-    type_repr: String
+    type_repr: String,
 }
 
 #[pymethods]
@@ -92,7 +92,7 @@ pub fn v8_to_py(value: Local<Value>, scope: &mut HandleScope, runtime: &Py<Runti
             }
             list.extract()
         } else {
-            Ok(JsArray { inner: Global::new(scope, array)}.into_py(py))
+            Ok(JsArray { inner: Global::new(scope, array) }.into_py(py))
         }
     } else if value.is_object() {
         let object = value.to_object(scope).unwrap();

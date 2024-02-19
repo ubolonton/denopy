@@ -33,6 +33,23 @@ def test_functions(runtime):
     assert js_sin(2) == math.sin(2)
 
 
+def test_methods(runtime):
+    runtime.eval("""
+        function Foo(bar) {
+          this.bar = bar;
+        }
+        Foo.prototype.get = function() {
+          return this.bar;
+        };
+    """)
+    obj = runtime.eval("obj = new Foo({x: 5})")
+    assert isinstance(runtime.eval("obj.bar"), denopy.JsObject)
+    assert runtime.eval("obj.bar", unwrap=True) == {'x': 5}
+    get = runtime.eval("obj.get")
+    assert isinstance(get(this=obj), denopy.JsObject)
+    assert get(this=obj, unwrap=True) == {'x': 5}
+
+
 def test_roundtrips(runtime, identity):
     for v in ["abc", 1, 5.3, True, False, None,
               [], [2, 3.4, "x"],

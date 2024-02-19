@@ -1,12 +1,12 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use deno_core::{FsModuleLoader, JsRuntime, ModuleCode, ModuleId, ModuleSpecifier, RuntimeOptions};
-use deno_core::v8::{Global, Local};
+use deno_core::{FsModuleLoader, JsRuntime, ModuleCode, ModuleId, ModuleSpecifier, RuntimeOptions, v8};
+use deno_core::v8::Local;
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
-use types::{JsFunction, JsArray, JsObject, JsValue};
+use types::{JsArray, JsFunction, JsObject, JsValue};
 
 mod types;
 
@@ -56,19 +56,19 @@ impl Runtime {
         // TODO: Don't create JS values unnecessarily.
         let js_value = types::py_to_v8(wrapped_js_value, scope)?;
         RUNTIME.with(|cell| types::v8_to_py(
-            js_value, scope, cell.borrow().as_ref().unwrap(), py, true
+            js_value, scope, cell.borrow().as_ref().unwrap(), py, true,
         ))
     }
 
     /// Evaluate a piece of JavaScript.
     ///
     /// The evaluation result may contain wrapped JavaScript values, unless 'unwrap' is True.
-    #[pyo3(signature = (source_code, *, unwrap=false))]
+    #[pyo3(signature = (source_code, *, unwrap = false))]
     fn eval(&mut self, py: Python<'_>, source_code: &str, unwrap: bool) -> PyResult<PyObject> {
         let result = self.js_runtime.execute_script("<eval>", ModuleCode::from(source_code.to_owned()))?;
         let scope = &mut self.js_runtime.handle_scope();
         RUNTIME.with(|cell| types::v8_to_py(
-            Local::new(scope, result), scope, cell.borrow().as_ref().unwrap(), py, unwrap
+            Local::new(scope, result), scope, cell.borrow().as_ref().unwrap(), py, unwrap,
         ))
     }
 
@@ -98,23 +98,25 @@ impl Runtime {
     /// Call a JavaScript function.
     ///
     /// The result may contain wrapped JavaScript values, unless 'unwrap' is True.
-    #[pyo3(signature = (function, *args, unwrap=false))]
-    fn call(&mut self, py: Python<'_>, function: &JsFunction, args: &PyTuple, unwrap: bool) -> PyResult<PyObject> {
-        let args = {
-            let scope = &mut self.js_runtime.handle_scope();
-            args.iter()
-                .map(|object| {
-                    types::py_to_v8(object, scope).map(|v| Global::new(scope, v))
-                })
-                .collect::<PyResult<Vec<_>>>()?
+    ///
+    /// If 'this' is not None, the function will be called as a method, with 'this' as the receiver.
+    #[pyo3(signature = (function, * args, unwrap = false, this = None))]
+    fn call(&mut self, py: Python<'_>, function: &JsFunction, args: &PyTuple, unwrap: bool, this: Option<&PyAny>) -> PyResult<PyObject> {
+        let scope = &mut self.js_runtime.handle_scope();
+        let this = match this {
+            Some(object) => types::py_to_v8(object, scope)?,
+            None => v8::undefined(scope).into(),
         };
-        self.tokio_runtime.block_on(async {
-            let result = self.js_runtime.call_with_args(&function.inner, &args).await?;
-            let scope = &mut self.js_runtime.handle_scope();
+        let args = args.iter()
+            .map(|object| types::py_to_v8(object, scope))
+            .collect::<PyResult<Vec<_>>>()?;
+        if let Some(result) = function.inner.open(scope).call(scope, this, &args) {
             RUNTIME.with(|cell| types::v8_to_py(
-                Local::new(scope, result), scope, cell.borrow().as_ref().unwrap(), py, unwrap
+                Local::new(scope, result), scope, cell.borrow().as_ref().unwrap(), py, unwrap,
             ))
-        })
+        } else {
+            Ok(py.None())
+        }
     }
 }
 

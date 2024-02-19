@@ -51,13 +51,31 @@ impl Runtime {
     }
 
     /// Convert a wrapped JavaScript value into its Python equivalent.
-    fn unwrap(&mut self, py: Python<'_>, wrapped_js_value: &PyAny) -> PyResult<PyObject> {
+    fn unwrap(&mut self, py: Python<'_>, value: &PyAny) -> PyResult<PyObject> {
         let scope = &mut self.js_runtime.handle_scope();
         // TODO: Don't create JS values unnecessarily.
-        let js_value = types::py_to_v8(wrapped_js_value, scope)?;
+        let js_value = types::py_to_v8(value, scope)?;
         RUNTIME.with(|cell| types::v8_to_py(
             js_value, scope, cell.borrow().as_ref().unwrap(), py, true,
         ))
+    }
+
+    /// Return the value of a JavaScript object's property.
+    ///
+    /// The result may be a wrapped JavaScript value, unless 'unwrap' is True.
+    #[pyo3(signature = (object, property, *, unwrap = false))]
+    fn get(&mut self, py: Python<'_>, object: &PyAny, property: &PyAny, unwrap: bool) -> PyResult<PyObject> {
+        let scope = &mut self.js_runtime.handle_scope();
+        let js_value = types::py_to_v8(object, scope)?;
+        if let Some(js_object) = js_value.to_object(scope) {
+            let prop = types::py_to_v8(property, scope)?;
+            if let Some(prop_value) = js_object.get(scope, prop) {
+                return RUNTIME.with(|cell| types::v8_to_py(
+                    Local::new(scope, prop_value), scope, cell.borrow().as_ref().unwrap(), py, unwrap,
+                ));
+            }
+        }
+        return Ok(py.None())
     }
 
     /// Evaluate a piece of JavaScript.

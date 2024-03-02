@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 ### Added
 - `JSFunction` calls and `Runtime.call()` raise `JsError` for uncaught JavaScript exceptions.
+- `Runtime.eval()` accepts an optional `name` argument, for better source code location reporting.
 
 ## [0.3.0] - 2024-02-19
 ### Changed

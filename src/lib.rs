@@ -80,10 +80,19 @@ impl Runtime {
 
     /// Evaluate a piece of JavaScript.
     ///
-    /// The evaluation result may contain wrapped JavaScript values, unless 'unwrap' is True.
-    #[pyo3(signature = (source_code, *, unwrap = false))]
-    fn eval(&mut self, py: Python<'_>, source_code: &str, unwrap: bool) -> PyResult<PyObject> {
-        let result = self.js_runtime.execute_script("<eval>", ModuleCode::from(source_code.to_owned()))?;
+    /// The evaluation result may contain wrapped JavaScript values,
+    /// unless 'unwrap' is True.
+    ///
+    /// The 'name' parameter is used in stack traces and error messages.
+    /// It should be a literal string, otherwise its memory will be leaked.
+    /// If it is None, the name "<eval>" is used.
+    #[pyo3(signature = (source_code, *, unwrap = false, name = None))]
+    fn eval(&mut self, py: Python<'_>, source_code: &str, unwrap: bool, name: Option<String>) -> PyResult<PyObject> {
+        let name: &'static str = match name {
+            Some(s) => s.leak(),
+            None => "<eval>",
+        };
+        let result = self.js_runtime.execute_script(name, ModuleCode::from(source_code.to_owned()))?;
         let scope = &mut self.js_runtime.handle_scope();
         RUNTIME.with(|cell| types::v8_to_py(
             Local::new(scope, result), scope, cell.borrow().as_ref().unwrap(), py, unwrap,

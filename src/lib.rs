@@ -2,11 +2,11 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use deno_core::{FsModuleLoader, JsRuntime, ModuleCode, ModuleId, ModuleSpecifier, RuntimeOptions, v8};
-use deno_core::v8::Local;
+use deno_core::v8::{Local, TryCatch};
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
-use types::{JsArray, JsFunction, JsObject, JsValue};
+use types::{JsArray, JsError, JsFunction, JsObject, JsValue};
 
 mod types;
 
@@ -75,7 +75,7 @@ impl Runtime {
                 ));
             }
         }
-        return Ok(py.None())
+        Ok(py.None())
     }
 
     /// Evaluate a piece of JavaScript.
@@ -128,7 +128,12 @@ impl Runtime {
         let args = args.iter()
             .map(|object| types::py_to_v8(object, scope))
             .collect::<PyResult<Vec<_>>>()?;
-        if let Some(result) = function.inner.open(scope).call(scope, this, &args) {
+        let scope = &mut TryCatch::new(scope);
+        let return_result = function.inner.open(scope).call(scope, this, &args);
+        if let Some(exception) = scope.exception() {
+            let js_error = deno_core::error::JsError::from_v8_exception(scope, exception);
+            Err(JsError::new_err(js_error.to_string()))
+        } else if let Some(result) = return_result {
             RUNTIME.with(|cell| types::v8_to_py(
                 Local::new(scope, result), scope, cell.borrow().as_ref().unwrap(), py, unwrap,
             ))
@@ -147,11 +152,12 @@ fn dbg_thread(msg: &str) {
 
 /// A wrapper around `deno_core`.
 #[pymodule]
-fn denopy(_py: Python, m: &PyModule) -> PyResult<()> {
+fn denopy(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<Runtime>()?;
     m.add_class::<JsArray>()?;
     m.add_class::<JsFunction>()?;
     m.add_class::<JsObject>()?;
     m.add_class::<JsValue>()?;
+    m.add("JsError", py.get_type::<JsError>())?;
     Ok(())
 }

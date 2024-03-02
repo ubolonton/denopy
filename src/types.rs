@@ -57,6 +57,8 @@ impl JsValue {
     }
 }
 
+pyo3::create_exception!(denopy, JsError, pyo3::exceptions::PyException);
+
 /// Converts a V8 value into a Python object.
 ///
 /// Unless `unwrap` is true, complex types like objects and arrays are wrapped in opaque Python

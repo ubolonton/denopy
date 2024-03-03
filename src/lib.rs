@@ -27,6 +27,14 @@ thread_local! {
     static RUNTIME: RefCell<Option<Py<Runtime>>> = RefCell::new(None);
 }
 
+macro_rules! v8_to_py {
+    ($value:expr, $scope:ident, $py:ident, $unwrap:expr) => {
+        RUNTIME.with(|cell| types::v8_to_py(
+            $value, $scope, cell.borrow().as_ref().unwrap(), $py, $unwrap,
+        ))
+    }
+}
+
 #[pymethods]
 impl Runtime {
     #[new]
@@ -55,9 +63,7 @@ impl Runtime {
         let scope = &mut self.js_runtime.handle_scope();
         // TODO: Don't create JS values unnecessarily.
         let js_value = types::py_to_v8(value, scope)?;
-        RUNTIME.with(|cell| types::v8_to_py(
-            js_value, scope, cell.borrow().as_ref().unwrap(), py, true,
-        ))
+        v8_to_py!(js_value, scope, py, true)
     }
 
     /// Return the value of a JavaScript object's property.
@@ -70,9 +76,7 @@ impl Runtime {
         if let Some(js_object) = js_value.to_object(scope) {
             let prop = types::py_to_v8(property, scope)?;
             if let Some(prop_value) = js_object.get(scope, prop) {
-                return RUNTIME.with(|cell| types::v8_to_py(
-                    Local::new(scope, prop_value), scope, cell.borrow().as_ref().unwrap(), py, unwrap,
-                ));
+                return v8_to_py!(Local::new(scope, prop_value), scope, py, unwrap);
             }
         }
         Ok(py.None())
@@ -95,9 +99,7 @@ impl Runtime {
         let result = self.js_runtime.execute_script(name, ModuleCode::from(source_code.to_owned()))
             .map_err(|err| JsError::new_err(err.to_string()))?;
         let scope = &mut self.js_runtime.handle_scope();
-        RUNTIME.with(|cell| types::v8_to_py(
-            Local::new(scope, result), scope, cell.borrow().as_ref().unwrap(), py, unwrap,
-        ))
+        v8_to_py!(Local::new(scope, result), scope, py, unwrap)
     }
 
     fn load_main_module(&mut self, py: Python<'_>, path: &str) -> PyResult<PyObject> {
@@ -143,9 +145,7 @@ impl Runtime {
         let return_result = function.inner.open(scope).call(scope, this, &args);
         if let Some(exception) = scope.exception() {
             let js_error = deno_core::error::JsError::from_v8_exception(scope, exception);
-            let exception = RUNTIME.with(|cell| types::v8_to_py(
-                exception, scope, cell.borrow().as_ref().unwrap(), py, unwrap,
-            ))?;
+            let exception = v8_to_py!(exception, scope, py, unwrap)?;
             let py_err = JsError::new_err(js_error.to_string());
             // XXX: We want readable traceback, so JsError.__str__ should only contain the formatted
             //  JS stacktrace. Since we don't know how to customize that, we attach the thrown value
@@ -153,9 +153,7 @@ impl Runtime {
             py_err.to_object(py).setattr(py, "value", exception)?;
             Err(py_err)
         } else if let Some(result) = return_result {
-            RUNTIME.with(|cell| types::v8_to_py(
-                Local::new(scope, result), scope, cell.borrow().as_ref().unwrap(), py, unwrap,
-            ))
+            v8_to_py!(Local::new(scope, result), scope, py, unwrap)
         } else {
             Ok(py.None())
         }

@@ -2,11 +2,11 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use deno_core::{FsModuleLoader, JsRuntime, ModuleCode, ModuleId, ModuleSpecifier, RuntimeOptions, v8};
-use deno_core::v8::Local;
+use deno_core::v8::{Local, TryCatch};
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
-use types::{JsArray, JsFunction, JsObject, JsValue};
+use types::{JsArray, JsError, JsFunction, JsObject, JsValue};
 
 mod types;
 
@@ -25,6 +25,14 @@ struct Runtime {
 
 thread_local! {
     static RUNTIME: RefCell<Option<Py<Runtime>>> = RefCell::new(None);
+}
+
+macro_rules! v8_to_py {
+    ($value:expr, $scope:ident, $py:ident, $unwrap:expr) => {
+        RUNTIME.with(|cell| types::v8_to_py(
+            $value, $scope, cell.borrow().as_ref().unwrap(), $py, $unwrap,
+        ))
+    }
 }
 
 #[pymethods]
@@ -55,9 +63,7 @@ impl Runtime {
         let scope = &mut self.js_runtime.handle_scope();
         // TODO: Don't create JS values unnecessarily.
         let js_value = types::py_to_v8(value, scope)?;
-        RUNTIME.with(|cell| types::v8_to_py(
-            js_value, scope, cell.borrow().as_ref().unwrap(), py, true,
-        ))
+        v8_to_py!(js_value, scope, py, true)
     }
 
     /// Return the value of a JavaScript object's property.
@@ -70,24 +76,30 @@ impl Runtime {
         if let Some(js_object) = js_value.to_object(scope) {
             let prop = types::py_to_v8(property, scope)?;
             if let Some(prop_value) = js_object.get(scope, prop) {
-                return RUNTIME.with(|cell| types::v8_to_py(
-                    Local::new(scope, prop_value), scope, cell.borrow().as_ref().unwrap(), py, unwrap,
-                ));
+                return v8_to_py!(Local::new(scope, prop_value), scope, py, unwrap);
             }
         }
-        return Ok(py.None())
+        Ok(py.None())
     }
 
     /// Evaluate a piece of JavaScript.
     ///
-    /// The evaluation result may contain wrapped JavaScript values, unless 'unwrap' is True.
-    #[pyo3(signature = (source_code, *, unwrap = false))]
-    fn eval(&mut self, py: Python<'_>, source_code: &str, unwrap: bool) -> PyResult<PyObject> {
-        let result = self.js_runtime.execute_script("<eval>", ModuleCode::from(source_code.to_owned()))?;
+    /// The evaluation result may contain wrapped JavaScript values,
+    /// unless 'unwrap' is True.
+    ///
+    /// The 'name' parameter is used in stack traces and error messages.
+    /// It should be a literal string, otherwise its memory will be leaked.
+    /// If it is None, the name "<eval>" is used.
+    #[pyo3(signature = (source_code, *, unwrap = false, name = None))]
+    fn eval(&mut self, py: Python<'_>, source_code: &str, unwrap: bool, name: Option<String>) -> PyResult<PyObject> {
+        let name: &'static str = match name {
+            Some(s) => s.leak(),
+            None => "<eval>",
+        };
+        let result = self.js_runtime.execute_script(name, ModuleCode::from(source_code.to_owned()))
+            .map_err(|err| JsError::new_err(err.to_string()))?;
         let scope = &mut self.js_runtime.handle_scope();
-        RUNTIME.with(|cell| types::v8_to_py(
-            Local::new(scope, result), scope, cell.borrow().as_ref().unwrap(), py, unwrap,
-        ))
+        v8_to_py!(Local::new(scope, result), scope, py, unwrap)
     }
 
     fn load_main_module(&mut self, py: Python<'_>, path: &str) -> PyResult<PyObject> {
@@ -108,7 +120,8 @@ impl Runtime {
 
     fn mod_evaluate(&mut self, py: Python<'_>, module_id: ModuleId) -> PyResult<PyObject> {
         self.tokio_runtime.block_on(async {
-            self.js_runtime.mod_evaluate(module_id).await?;
+            self.js_runtime.mod_evaluate(module_id).await
+                .map_err(|err| JsError::new_err(err.to_string()))?;
             Ok(module_id.into_py(py))
         })
     }
@@ -128,30 +141,33 @@ impl Runtime {
         let args = args.iter()
             .map(|object| types::py_to_v8(object, scope))
             .collect::<PyResult<Vec<_>>>()?;
-        if let Some(result) = function.inner.open(scope).call(scope, this, &args) {
-            RUNTIME.with(|cell| types::v8_to_py(
-                Local::new(scope, result), scope, cell.borrow().as_ref().unwrap(), py, unwrap,
-            ))
+        let scope = &mut TryCatch::new(scope);
+        let return_result = function.inner.open(scope).call(scope, this, &args);
+        if let Some(exception) = scope.exception() {
+            let js_error = deno_core::error::JsError::from_v8_exception(scope, exception);
+            let exception = v8_to_py!(exception, scope, py, unwrap)?;
+            let py_err = JsError::new_err(js_error.to_string());
+            // XXX: We want readable traceback, so JsError.__str__ should only contain the formatted
+            //  JS stacktrace. Since we don't know how to customize that, we attach the thrown value
+            //  to the JsError exception after constructing it.
+            py_err.to_object(py).setattr(py, "value", exception)?;
+            Err(py_err)
+        } else if let Some(result) = return_result {
+            v8_to_py!(Local::new(scope, result), scope, py, unwrap)
         } else {
             Ok(py.None())
         }
     }
 }
 
-fn dbg_thread(msg: &str) {
-    let thread = std::thread::current();
-    let name = thread.name().unwrap_or("unknown");
-    let id = thread.id();
-    println!("{msg} thread: {name} {id:?}");
-}
-
 /// A wrapper around `deno_core`.
 #[pymodule]
-fn denopy(_py: Python, m: &PyModule) -> PyResult<()> {
+fn denopy(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<Runtime>()?;
     m.add_class::<JsArray>()?;
     m.add_class::<JsFunction>()?;
     m.add_class::<JsObject>()?;
     m.add_class::<JsValue>()?;
+    m.add("JsError", py.get_type::<JsError>())?;
     Ok(())
 }

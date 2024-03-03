@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+### Added
+- JavaScript evaluation raises `JsError` for uncaught JavaScript exceptions. Evalution includes `JsFunction` calls, and `Runtime` methods `eval`, `mod_evaluate`, `call`.
+    - For function calls, the raised `JsError` object stores the thrown JavaScript exception in the attribute `value`.
+- `Runtime.eval()` accepts an optional `name` argument, for better source code location reporting.
 
 ## [0.3.0] - 2024-02-19
 ### Changed

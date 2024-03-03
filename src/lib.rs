@@ -92,7 +92,8 @@ impl Runtime {
             Some(s) => s.leak(),
             None => "<eval>",
         };
-        let result = self.js_runtime.execute_script(name, ModuleCode::from(source_code.to_owned()))?;
+        let result = self.js_runtime.execute_script(name, ModuleCode::from(source_code.to_owned()))
+            .map_err(|err| JsError::new_err(err.to_string()))?;
         let scope = &mut self.js_runtime.handle_scope();
         RUNTIME.with(|cell| types::v8_to_py(
             Local::new(scope, result), scope, cell.borrow().as_ref().unwrap(), py, unwrap,
@@ -117,7 +118,8 @@ impl Runtime {
 
     fn mod_evaluate(&mut self, py: Python<'_>, module_id: ModuleId) -> PyResult<PyObject> {
         self.tokio_runtime.block_on(async {
-            self.js_runtime.mod_evaluate(module_id).await?;
+            self.js_runtime.mod_evaluate(module_id).await
+                .map_err(|err| JsError::new_err(err.to_string()))?;
             Ok(module_id.into_py(py))
         })
     }

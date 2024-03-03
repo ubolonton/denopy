@@ -154,13 +154,6 @@ impl Runtime {
     }
 }
 
-fn dbg_thread(msg: &str) {
-    let thread = std::thread::current();
-    let name = thread.name().unwrap_or("unknown");
-    let id = thread.id();
-    println!("{msg} thread: {name} {id:?}");
-}
-
 /// A wrapper around `deno_core`.
 #[pymodule]
 fn denopy(py: Python, m: &PyModule) -> PyResult<()> {

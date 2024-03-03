@@ -143,7 +143,15 @@ impl Runtime {
         let return_result = function.inner.open(scope).call(scope, this, &args);
         if let Some(exception) = scope.exception() {
             let js_error = deno_core::error::JsError::from_v8_exception(scope, exception);
-            Err(JsError::new_err(js_error.to_string()))
+            let exception = RUNTIME.with(|cell| types::v8_to_py(
+                exception, scope, cell.borrow().as_ref().unwrap(), py, unwrap,
+            ))?;
+            let py_err = JsError::new_err(js_error.to_string());
+            // XXX: We want readable traceback, so JsError.__str__ should only contain the formatted
+            //  JS stacktrace. Since we don't know how to customize that, we attach the thrown value
+            //  to the JsError exception after constructing it.
+            py_err.to_object(py).setattr(py, "value", exception)?;
+            Err(py_err)
         } else if let Some(result) = return_result {
             RUNTIME.with(|cell| types::v8_to_py(
                 Local::new(scope, result), scope, cell.borrow().as_ref().unwrap(), py, unwrap,

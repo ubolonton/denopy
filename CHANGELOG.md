@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+### Changed
+- JavaScript whole numbers larger than 32 bits are now converted to Python `int`.
+    - Previously they were converted to `float`.
+    - Even unsafe whole numbers (larger than 53 bits) are converted.
 
 ## [0.4.0] - 2024-03-03
 ### Added

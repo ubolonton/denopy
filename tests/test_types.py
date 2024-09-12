@@ -12,9 +12,13 @@ def identity(runtime):
     return runtime.eval("x => x")
 
 
-def test_numbers(runtime):
+def test_numbers(runtime, identity):
     for n in [1, 1.0, -5, -7.5]:
         assert runtime.eval(f"{n}") == n
+        assert identity(n) == n
+        if isinstance(n, float) and n.is_integer():
+            continue
+        assert type(identity(n)) == type(n)
 
 
 def test_strings(runtime):
@@ -22,7 +26,7 @@ def test_strings(runtime):
 
 
 def test_roundtrips(runtime, identity):
-    for v in ["abc", 1, 5.3, True, False, None,
+    for v in ["abc", 1, 1.0, 5.3, True, False, None,
               [], [2, 3.4, "x"],
               {}, {'a': 5, 'b': ['x', dict(c=None)]}]:
         assert runtime.call(identity, v, unwrap=True) == v

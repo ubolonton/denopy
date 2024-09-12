@@ -79,7 +79,12 @@ pub fn v8_to_py(value: Local<Value>, scope: &mut HandleScope, runtime: &Py<Runti
     } else if value.is_uint32() {
         Ok(value.uint32_value(scope).unwrap().into_py(py))
     } else if value.is_number() {
-        Ok(value.number_value(scope).unwrap().into_py(py))
+        let f = value.number_value(scope).unwrap();
+        if f.trunc() == f {
+            Ok((f as i64).into_py(py))
+        } else {
+            Ok(f.into_py(py))
+        }
     } else if let Result::<Local<v8::Function>, _>::Ok(function) = value.try_into() {
         Ok(JsFunction {
             inner: Global::new(scope, function),

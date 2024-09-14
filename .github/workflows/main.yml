@@ -50,7 +50,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          pip install denopy --find-links dist --no-index --force-reinstall
+          pip install -vvv denopy --find-links dist --no-index --force-reinstall
           pip install pytest
           pytest
       - name: pytest
@@ -96,7 +96,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          pip install denopy --find-links dist --no-index --force-reinstall
+          pip install -vvv denopy --find-links dist --no-index --force-reinstall
           pip install pytest
           pytest
 
@@ -126,7 +126,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          pip install denopy --find-links dist --no-index --force-reinstall
+          pip install -vvv denopy --find-links dist --no-index --force-reinstall
           pip install pytest
           pytest
 

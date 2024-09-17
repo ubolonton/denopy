@@ -5,9 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 ### Changed
-- JavaScript whole numbers larger than 32 bits are now converted to Python `int`.
-    - Previously they were converted to `float`.
-    - Even unsafe whole numbers (larger than 53 bits) are converted.
+- JavaScript numbers that are [safe integers](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/isSafeInteger) can now be converted to Python `int` via the flag `convert_safe_integers`.
+    - Previously they were converted to `float`, unless they are valid 32-bit integers.
+    - [Unsafe integers](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/MAX_SAFE_INTEGER) are still converted to `float` instead.
 
 ## [0.4.0] - 2024-03-03
 ### Added

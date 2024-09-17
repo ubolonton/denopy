@@ -12,11 +12,13 @@ mod types;
 
 /// A wrapper around deno_core's JsRuntime.
 ///
-/// Instances of this class can only be used from the thread they were created on.
-/// If they are sent to another thread, they will panic when used.
+/// Instances of this class can only be used from the thread they were
+/// created on. If they are sent to another thread, they will panic when
+/// used.
 ///
-/// Each thread is associated with at most one instance. After the constructor is called once,
-/// subsequent calls on the same thread return the same instance.
+/// Each thread is associated with at most one instance. After the
+/// constructor is called once, subsequent calls on the same thread return
+/// the same instance.
 #[pyclass(unsendable, module = "denopy")]
 struct Runtime {
     js_runtime: JsRuntime,
@@ -28,9 +30,9 @@ thread_local! {
 }
 
 macro_rules! v8_to_py {
-    ($value:expr, $scope:ident, $py:ident, $unwrap:expr) => {
+    ($value:expr, $scope:ident, $py:ident, $unwrap:expr, $convert_safe_integers:expr) => {
         RUNTIME.with(|cell| types::v8_to_py(
-            $value, $scope, cell.borrow().as_ref().unwrap(), $py, $unwrap,
+            $value, $scope, cell.borrow().as_ref().unwrap(), $py, $unwrap, $convert_safe_integers
         ))
     }
 }
@@ -59,24 +61,35 @@ impl Runtime {
     }
 
     /// Convert a wrapped JavaScript value into its Python equivalent.
-    fn unwrap(&mut self, py: Python<'_>, value: &PyAny) -> PyResult<PyObject> {
+    ///
+    /// JavaScript numbers that are valid 32-bit integers are converted into
+    /// Python ints. Other numbers are converted to Python floats.
+    /// When 'convert_safe_integers' is True, JavaScript numbers that are safe
+    /// integers are also converted into Python ints.
+    #[pyo3(signature = (value, *, convert_safe_integers = false))]
+    fn unwrap(&mut self, py: Python<'_>, value: &PyAny, convert_safe_integers: bool) -> PyResult<PyObject> {
         let scope = &mut self.js_runtime.handle_scope();
         // TODO: Don't create JS values unnecessarily.
         let js_value = types::py_to_v8(value, scope)?;
-        v8_to_py!(js_value, scope, py, true)
+        v8_to_py!(js_value, scope, py, true, convert_safe_integers)
     }
 
     /// Return the value of a JavaScript object's property.
     ///
     /// The result may be a wrapped JavaScript value, unless 'unwrap' is True.
-    #[pyo3(signature = (object, property, *, unwrap = false))]
-    fn get(&mut self, py: Python<'_>, object: &PyAny, property: &PyAny, unwrap: bool) -> PyResult<PyObject> {
+    ///
+    /// JavaScript numbers that are valid 32-bit integers are converted into
+    /// Python ints. Other numbers are converted to Python floats.
+    /// When 'convert_safe_integers' is True, JavaScript numbers that are safe
+    /// integers are also converted into Python ints.
+    #[pyo3(signature = (object, property, *, unwrap = false, convert_safe_integers = false))]
+    fn get(&mut self, py: Python<'_>, object: &PyAny, property: &PyAny, unwrap: bool, convert_safe_integers: bool) -> PyResult<PyObject> {
         let scope = &mut self.js_runtime.handle_scope();
         let js_value = types::py_to_v8(object, scope)?;
         if let Some(js_object) = js_value.to_object(scope) {
             let prop = types::py_to_v8(property, scope)?;
             if let Some(prop_value) = js_object.get(scope, prop) {
-                return v8_to_py!(Local::new(scope, prop_value), scope, py, unwrap);
+                return v8_to_py!(Local::new(scope, prop_value), scope, py, unwrap, convert_safe_integers);
             }
         }
         Ok(py.None())
@@ -84,14 +97,19 @@ impl Runtime {
 
     /// Evaluate a piece of JavaScript.
     ///
-    /// The evaluation result may contain wrapped JavaScript values,
-    /// unless 'unwrap' is True.
+    /// The evaluation result may contain wrapped JavaScript values, unless
+    /// 'unwrap' is True.
     ///
     /// The 'name' parameter is used in stack traces and error messages.
     /// It should be a literal string, otherwise its memory will be leaked.
     /// If it is None, the name "<eval>" is used.
-    #[pyo3(signature = (source_code, *, unwrap = false, name = None))]
-    fn eval(&mut self, py: Python<'_>, source_code: &str, unwrap: bool, name: Option<String>) -> PyResult<PyObject> {
+    ///
+    /// JavaScript numbers that are valid 32-bit integers are converted into
+    /// Python ints. Other numbers are converted to Python floats.
+    /// When 'convert_safe_integers' is True, JavaScript numbers that are safe
+    /// integers are also converted into Python ints.
+    #[pyo3(signature = (source_code, *, unwrap = false, name = None, convert_safe_integers = false))]
+    fn eval(&mut self, py: Python<'_>, source_code: &str, unwrap: bool, name: Option<String>, convert_safe_integers: bool) -> PyResult<PyObject> {
         let name: &'static str = match name {
             Some(s) => s.leak(),
             None => "<eval>",
@@ -99,7 +117,7 @@ impl Runtime {
         let result = self.js_runtime.execute_script(name, ModuleCode::from(source_code.to_owned()))
             .map_err(|err| JsError::new_err(err.to_string()))?;
         let scope = &mut self.js_runtime.handle_scope();
-        v8_to_py!(Local::new(scope, result), scope, py, unwrap)
+        v8_to_py!(Local::new(scope, result), scope, py, unwrap, convert_safe_integers)
     }
 
     fn load_main_module(&mut self, py: Python<'_>, path: &str) -> PyResult<PyObject> {
@@ -130,9 +148,15 @@ impl Runtime {
     ///
     /// The result may contain wrapped JavaScript values, unless 'unwrap' is True.
     ///
-    /// If 'this' is not None, the function will be called as a method, with 'this' as the receiver.
-    #[pyo3(signature = (function, * args, unwrap = false, this = None))]
-    fn call(&mut self, py: Python<'_>, function: &JsFunction, args: &PyTuple, unwrap: bool, this: Option<&PyAny>) -> PyResult<PyObject> {
+    /// If 'this' is not None, the function will be called as a method,
+    /// with 'this' as the receiver.
+    ///
+    /// JavaScript numbers that are valid 32-bit integers are converted into
+    /// Python ints. Other numbers are converted to Python floats.
+    /// When 'convert_safe_integers' is True, JavaScript numbers that are safe
+    /// integers are also converted into Python ints.
+    #[pyo3(signature = (function, * args, unwrap = false, this = None, convert_safe_integers = false))]
+    fn call(&mut self, py: Python<'_>, function: &JsFunction, args: &PyTuple, unwrap: bool, this: Option<&PyAny>, convert_safe_integers: bool) -> PyResult<PyObject> {
         let scope = &mut self.js_runtime.handle_scope();
         let this = match this {
             Some(object) => types::py_to_v8(object, scope)?,
@@ -145,7 +169,7 @@ impl Runtime {
         let return_result = function.inner.open(scope).call(scope, this, &args);
         if let Some(exception) = scope.exception() {
             let js_error = deno_core::error::JsError::from_v8_exception(scope, exception);
-            let exception = v8_to_py!(exception, scope, py, unwrap)?;
+            let exception = v8_to_py!(exception, scope, py, unwrap, convert_safe_integers)?;
             let py_err = JsError::new_err(js_error.to_string());
             // XXX: We want readable traceback, so JsError.__str__ should only contain the formatted
             //  JS stacktrace. Since we don't know how to customize that, we attach the thrown value
@@ -153,7 +177,7 @@ impl Runtime {
             py_err.to_object(py).setattr(py, "value", exception)?;
             Err(py_err)
         } else if let Some(result) = return_result {
-            v8_to_py!(Local::new(scope, result), scope, py, unwrap)
+            v8_to_py!(Local::new(scope, result), scope, py, unwrap, convert_safe_integers)
         } else {
             Ok(py.None())
         }

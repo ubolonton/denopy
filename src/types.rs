@@ -83,8 +83,6 @@ pub fn v8_to_py(value: Local<Value>, scope: &mut HandleScope, runtime: &Py<Runti
         Ok(value.boolean_value(scope).into_py(py))
     } else if value.is_int32() {
         Ok(value.int32_value(scope).unwrap().into_py(py))
-    } else if value.is_uint32() {
-        Ok(value.uint32_value(scope).unwrap().into_py(py))
     } else if value.is_number() {
         let f = value.number_value(scope).unwrap();
         if convert_safe_integers && f.trunc() == f {

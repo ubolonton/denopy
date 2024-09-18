@@ -28,8 +28,10 @@ def test_small_integers(runtime, identity):
     for n in [2 ** 8, 2 ** 16, 2 ** 31 - 1, -(2 ** 31)]:
         assert_eq_type(n, runtime.eval(f"{n}"))
         assert_eq_type(n, identity(n))
-        assert_eq_type(n, runtime.eval(f"{n}", convert_safe_integers=True))
-        assert_eq_type(n, identity(n, convert_safe_integers=True))
+        assert_eq_type(n, runtime.eval(f"{n}", integer_conversion='safe'))
+        assert_eq_type(n, identity(n, integer_conversion='safe'))
+        assert_eq_type(float(n), runtime.eval(f"{n}", integer_conversion='never'))
+        assert_eq_type(float(n), identity(n, integer_conversion='never'))
         # Even if it's a whole float.
         assert_eq_type(n, runtime.eval(f"{float(n)}"))
         assert_eq_type(n, identity(float(n)))
@@ -42,8 +44,8 @@ def test_safe_integers(runtime, identity):
         assert_eq_type(float(n), runtime.eval(f"{n}"))
         assert_eq_type(float(n), identity(n))
         # Nice behavior.
-        assert_eq_type(n, runtime.eval(f"{n}", convert_safe_integers=True))
-        assert_eq_type(n, identity(n, convert_safe_integers=True))
+        assert_eq_type(n, runtime.eval(f"{n}", integer_conversion='safe'))
+        assert_eq_type(n, identity(n, integer_conversion='safe'))
 
 
 def test_unsafe_integers(runtime, identity):
@@ -51,9 +53,9 @@ def test_unsafe_integers(runtime, identity):
     for n in [2 ** 53, - (2 ** 53), 2 ** 64, -(2 ** 64)]:
         assert_eq_type(float(n), runtime.eval(f"{n}"))
         assert_eq_type(float(n), identity(n))
-        # Even with aggressive conversion.
-        assert_eq_type(float(n), runtime.eval(f"{n}", convert_safe_integers=True))
-        assert_eq_type(float(n), identity(n, convert_safe_integers=True))
+        # Even with 'safe' conversion.
+        assert_eq_type(float(n), runtime.eval(f"{n}", integer_conversion='safe'))
+        assert_eq_type(float(n), identity(n, integer_conversion='safe'))
 
 
 def test_strings(runtime):

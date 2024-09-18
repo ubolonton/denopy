@@ -5,14 +5,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 ### Changed
-- JavaScript numbers that are [safe integers](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/isSafeInteger) can now be converted into Python `int` via the flag `convert_safe_integers`.
-    - Before:
-        - Numbers that are valid 32-bit signed/unsigned integers (`i32`/`u32`) are converted into `int`.
-        - Others are converted into `float`.
-    - After:
-        - Numbers that are valid 32-bit signed integers are converted into `int`.
-        - Numbers that are safe integers, but outside of `i32`, are converted into `float` (even if they are inside `u32`). If the flag is `True`, they are converted into `int`. The latter is arguably nicer behavior, but not the default, for consistency with other common embedded JavaScript engines.
-        - Other numbers are convented into `float`, including [unsafe integers](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/MAX_SAFE_INTEGER).
+- The behavior of whether a JavaScript number is converted into Python `float` or `int` has changed.
+    - Before: Numbers that are valid 32-bit signed/unsigned integers (`i32`/`u32`) are converted into `int`. Others are converted into `float`.
+    - After: Non-whole numbers are converted into `float`. Whole-number conversion is controlled by the parameter `integer_conversion`. The valid values are, in the order of increasing aggressiveness:
+        - `never`: All numbers are converted into `float`.
+        - `i32`: Only valid 32-bit integers are converted into `int`. This is the default, for consistency with other common embedded JavaScript engines.
+        - `safe`: Whole numbers within the [safe-integer range](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/isSafeInteger) are converted into `int`. This is arguably the nicer behavior.
+        - `aggressive`: Even [unsafe integers](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/MAX_SAFE_INTEGER) are converted into `int`.
 
 ## [0.4.0] - 2024-03-03
 ### Added

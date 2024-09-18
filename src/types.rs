@@ -1,6 +1,7 @@
 use deno_core::v8;
 use deno_core::v8::{Global, HandleScope, Local, Value};
 use pyo3::{IntoPy, Py, PyAny, pyclass, pymethods, PyObject, PyResult, Python};
+use pyo3::exceptions::PyValueError;
 use pyo3::types::{PyDict, PyList, PyTuple};
 
 use crate::Runtime;
@@ -15,9 +16,9 @@ pub struct JsFunction {
 
 #[pymethods]
 impl JsFunction {
-    #[pyo3(signature = (* args, unwrap = false, this = None, convert_safe_integers = false))]
-    fn __call__(&self, py: Python<'_>, args: &PyTuple, unwrap: bool, this: Option<&PyAny>, convert_safe_integers: bool) -> PyResult<PyObject> {
-        self.runtime.borrow_mut(py).call(py, self, args, unwrap, this, convert_safe_integers)
+    #[pyo3(signature = (* args, unwrap = false, this = None, integer_conversion = "i32"))]
+    fn __call__(&self, py: Python<'_>, args: &PyTuple, unwrap: bool, this: Option<&PyAny>, integer_conversion: &str) -> PyResult<PyObject> {
+        self.runtime.borrow_mut(py).call(py, self, args, unwrap, this, integer_conversion)
     }
 
     fn __repr__(&self, py: Python<'_>) -> String {
@@ -67,11 +68,16 @@ const MIN_SAFE_INTEGER: i64 = -MAX_SAFE_INTEGER;
 /// Complex types like objects and arrays are wrapped in opaque Python objects. When `unwrap` is
 /// true, they are converted into Python dicts and lists.
 ///
-/// JavaScript numbers that are valid 32-bit integers are converted into Python ints. Other numbers
-/// are converted to Python floats. When `convert_safe_integers` is True, JavaScript numbers that
-/// are safe integers are also converted into Python ints.
+/// JavaScript numbers are double-precision floating-point. This function converts them into Python
+/// `float`s, unless they are whole numbers, in which case the parameter `integer_conversion`
+/// controls when they are converted into Python `int`s:
+/// - `never`: Convert all whole numbers into `float`s.
+/// - `i32`: Convert only valid 32-bit integers into `int`s.
+/// - `safe`: Convert all safe integers into `int`s.
+/// - `aggressive`: Convert all whole numbers into `int`s.
+///
 pub fn v8_to_py(value: Local<Value>, scope: &mut HandleScope, runtime: &Py<Runtime>, py: Python<'_>,
-                unwrap: bool, convert_safe_integers: bool) -> PyResult<PyObject> {
+                unwrap: bool, integer_conversion: &str) -> PyResult<PyObject> {
     // We need to use predicates to check the type first, instead of casting, since JavaScript's
     // type casting rules are rather weird.
     // TODO: undefined should not be None.
@@ -82,14 +88,28 @@ pub fn v8_to_py(value: Local<Value>, scope: &mut HandleScope, runtime: &Py<Runti
     } else if value.is_boolean() {
         Ok(value.boolean_value(scope).into_py(py))
     } else if value.is_int32() {
-        Ok(value.int32_value(scope).unwrap().into_py(py))
+        match integer_conversion {
+            "safe" | "i32" | "aggressive" => Ok(value.int32_value(scope).unwrap().into_py(py)),
+            "never" => Ok(value.number_value(scope).unwrap().into_py(py)),
+            _ => Err(PyValueError::new_err("Invalid 'integer_conversion' value")),
+        }
     } else if value.is_number() {
         let f = value.number_value(scope).unwrap();
-        if convert_safe_integers && f.trunc() == f {
-            let i = f as i64;
-            if (MIN_SAFE_INTEGER..=MAX_SAFE_INTEGER).contains(&i) {
-                return Ok(i.into_py(py))
-            }
+        match integer_conversion {
+            "safe" =>
+                if f.trunc() == f {
+                    let i = f as i64;
+                    if (MIN_SAFE_INTEGER..=MAX_SAFE_INTEGER).contains(&i) {
+                        return Ok(i.into_py(py));
+                    }
+                }
+            "aggressive" =>
+                if f.trunc() == f {
+                    return Ok((f as i64).into_py(py));
+                }
+            "i32" | "never" => {}
+            _ =>
+                return Err(PyValueError::new_err("Invalid 'integer_conversion' value"))
         }
         Ok(f.into_py(py))
     } else if let Result::<Local<v8::Function>, _>::Ok(function) = value.try_into() {
@@ -102,7 +122,7 @@ pub fn v8_to_py(value: Local<Value>, scope: &mut HandleScope, runtime: &Py<Runti
             let list = PyList::empty(py);
             for i in 0..array.length() {
                 let v = array.get_index(scope, i).unwrap();
-                list.append(v8_to_py(v, scope, runtime, py, unwrap, convert_safe_integers)?)?;
+                list.append(v8_to_py(v, scope, runtime, py, unwrap, integer_conversion)?)?;
             }
             list.extract()
         } else {
@@ -117,8 +137,8 @@ pub fn v8_to_py(value: Local<Value>, scope: &mut HandleScope, runtime: &Py<Runti
                 let prop = props.get_index(scope, i).unwrap();
                 let prop_value = object.get(scope, prop).unwrap();
                 dict.set_item(
-                    v8_to_py(prop, scope, runtime, py, unwrap, convert_safe_integers)?,
-                    v8_to_py(prop_value, scope, runtime, py, unwrap, convert_safe_integers)?,
+                    v8_to_py(prop, scope, runtime, py, unwrap, integer_conversion)?,
+                    v8_to_py(prop_value, scope, runtime, py, unwrap, integer_conversion)?,
                 )?;
             }
             dict.extract()

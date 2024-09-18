@@ -70,7 +70,7 @@ impl Runtime {
     ///   - 'safe': Whole numbers within the safe-integer range.
     ///   - 'i32': Only valid 32-bit integers.
     ///   - 'never': Whole numbers are converted into 'float'.
-    #[pyo3(signature = (value, *, integer_conversion = "i32"))]
+    #[pyo3(signature = (value, *, integer_conversion = "safe"))]
     fn unwrap(&mut self, py: Python<'_>, value: &PyAny, integer_conversion: &str) -> PyResult<PyObject> {
         let scope = &mut self.js_runtime.handle_scope();
         // TODO: Don't create JS values unnecessarily.
@@ -90,7 +90,7 @@ impl Runtime {
     ///   - 'safe': Whole numbers within the safe-integer range.
     ///   - 'i32': Only valid 32-bit integers.
     ///   - 'never': Whole numbers are converted into 'float'.
-    #[pyo3(signature = (object, property, *, unwrap = false, integer_conversion = "i32"))]
+    #[pyo3(signature = (object, property, *, unwrap = false, integer_conversion = "safe"))]
     fn get(&mut self, py: Python<'_>, object: &PyAny, property: &PyAny, unwrap: bool, integer_conversion: &str) -> PyResult<PyObject> {
         let scope = &mut self.js_runtime.handle_scope();
         let js_value = types::py_to_v8(object, scope)?;
@@ -120,7 +120,7 @@ impl Runtime {
     ///   - 'safe': Whole numbers within the safe-integer range.
     ///   - 'i32': Only valid 32-bit integers.
     ///   - 'never': Whole numbers are converted into 'float'.
-    #[pyo3(signature = (source_code, *, unwrap = false, name = None, integer_conversion = "i32"))]
+    #[pyo3(signature = (source_code, *, unwrap = false, name = None, integer_conversion = "safe"))]
     fn eval(&mut self, py: Python<'_>, source_code: &str, unwrap: bool, name: Option<String>, integer_conversion: &str) -> PyResult<PyObject> {
         let name: &'static str = match name {
             Some(s) => s.leak(),
@@ -171,7 +171,7 @@ impl Runtime {
     ///   - 'safe': Whole numbers within the safe-integer range.
     ///   - 'i32': Only valid 32-bit integers.
     ///   - 'never': Whole numbers are converted into 'float'.
-    #[pyo3(signature = (function, * args, unwrap = false, this = None, integer_conversion = "i32"))]
+    #[pyo3(signature = (function, * args, unwrap = false, this = None, integer_conversion = "safe"))]
     fn call(&mut self, py: Python<'_>, function: &JsFunction, args: &PyTuple, unwrap: bool, this: Option<&PyAny>, integer_conversion: &str) -> PyResult<PyObject> {
         let scope = &mut self.js_runtime.handle_scope();
         let this = match this {

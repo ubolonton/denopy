@@ -16,7 +16,7 @@ pub struct JsFunction {
 
 #[pymethods]
 impl JsFunction {
-    #[pyo3(signature = (* args, unwrap = false, this = None, integer_conversion = "i32"))]
+    #[pyo3(signature = (* args, unwrap = false, this = None, integer_conversion = "safe"))]
     fn __call__(&self, py: Python<'_>, args: &PyTuple, unwrap: bool, this: Option<&PyAny>, integer_conversion: &str) -> PyResult<PyObject> {
         self.runtime.borrow_mut(py).call(py, self, args, unwrap, this, integer_conversion)
     }

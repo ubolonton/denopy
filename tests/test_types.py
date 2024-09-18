@@ -26,23 +26,23 @@ def test_floats(runtime, identity):
 def test_small_integers(runtime, identity):
     # Fit into i32. Always int.
     for n in [2 ** 8, 2 ** 16, 2 ** 31 - 1, -(2 ** 31)]:
+        assert_eq_type(n, runtime.eval(f"{n}", integer_conversion='i32'))
+        assert_eq_type(n, identity(n, integer_conversion='i32'))
         assert_eq_type(n, runtime.eval(f"{n}"))
         assert_eq_type(n, identity(n))
-        assert_eq_type(n, runtime.eval(f"{n}", integer_conversion='safe'))
-        assert_eq_type(n, identity(n, integer_conversion='safe'))
         assert_eq_type(float(n), runtime.eval(f"{n}", integer_conversion='never'))
         assert_eq_type(float(n), identity(n, integer_conversion='never'))
         # Even if it's a whole float.
-        assert_eq_type(n, runtime.eval(f"{float(n)}"))
-        assert_eq_type(n, identity(float(n)))
+        assert_eq_type(n, runtime.eval(f"{float(n)}", integer_conversion='i32'))
+        assert_eq_type(n, identity(float(n), integer_conversion='i32'))
 
 
 def test_safe_integers(runtime, identity):
     # Fit into JavaScript safe integer range (f64 has 53-bit mantissa).
     for n in [2 ** 31, 2 ** 32, 2 ** 53 - 1, -(2 ** 53 - 1)]:
-        # Default behavior.
-        assert_eq_type(float(n), runtime.eval(f"{n}"))
-        assert_eq_type(float(n), identity(n))
+        # Conservative behavior.
+        assert_eq_type(float(n), runtime.eval(f"{n}", integer_conversion='i32'))
+        assert_eq_type(float(n), identity(n, integer_conversion='i32'))
         # Nice behavior.
         assert_eq_type(n, runtime.eval(f"{n}", integer_conversion='safe'))
         assert_eq_type(n, identity(n, integer_conversion='safe'))
@@ -51,9 +51,8 @@ def test_safe_integers(runtime, identity):
 def test_unsafe_integers(runtime, identity):
     # Don't fit into the above. Always float.
     for n in [2 ** 53, - (2 ** 53), 2 ** 64, -(2 ** 64)]:
-        assert_eq_type(float(n), runtime.eval(f"{n}"))
-        assert_eq_type(float(n), identity(n))
-        # Even with 'safe' conversion.
+        assert_eq_type(float(n), runtime.eval(f"{n}", integer_conversion='i32'))
+        assert_eq_type(float(n), identity(n, integer_conversion='i32'))
         assert_eq_type(float(n), runtime.eval(f"{n}", integer_conversion='safe'))
         assert_eq_type(float(n), identity(n, integer_conversion='safe'))
 

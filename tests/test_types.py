@@ -12,9 +12,49 @@ def identity(runtime):
     return runtime.eval("x => x")
 
 
-def test_numbers(runtime):
-    for n in [1, 1.0, -5, -7.5]:
-        assert runtime.eval(f"{n}") == n
+def assert_eq_type(expected_value, actual):
+    assert actual == expected_value
+    assert isinstance(actual, type(expected_value))
+
+
+def test_floats(runtime, identity):
+    for f in [1.5, 0.1, -10.2]:
+        assert_eq_type(f, runtime.eval(f"{f}"))
+        assert_eq_type(f, identity(f))
+
+
+def test_small_integers(runtime, identity):
+    # Fit into i32. Always int.
+    for n in [2 ** 8, 2 ** 16, 2 ** 31 - 1, -(2 ** 31)]:
+        assert_eq_type(n, runtime.eval(f"{n}", integer_conversion='i32'))
+        assert_eq_type(n, identity(n, integer_conversion='i32'))
+        assert_eq_type(n, runtime.eval(f"{n}"))
+        assert_eq_type(n, identity(n))
+        assert_eq_type(float(n), runtime.eval(f"{n}", integer_conversion='never'))
+        assert_eq_type(float(n), identity(n, integer_conversion='never'))
+        # Even if it's a whole float.
+        assert_eq_type(n, runtime.eval(f"{float(n)}", integer_conversion='i32'))
+        assert_eq_type(n, identity(float(n), integer_conversion='i32'))
+
+
+def test_safe_integers(runtime, identity):
+    # Fit into JavaScript safe integer range (f64 has 53-bit mantissa).
+    for n in [2 ** 31, 2 ** 32, 2 ** 53 - 1, -(2 ** 53 - 1)]:
+        # Conservative behavior.
+        assert_eq_type(float(n), runtime.eval(f"{n}", integer_conversion='i32'))
+        assert_eq_type(float(n), identity(n, integer_conversion='i32'))
+        # Nice behavior.
+        assert_eq_type(n, runtime.eval(f"{n}", integer_conversion='safe'))
+        assert_eq_type(n, identity(n, integer_conversion='safe'))
+
+
+def test_unsafe_integers(runtime, identity):
+    # Don't fit into the above. Always float.
+    for n in [2 ** 53, - (2 ** 53), 2 ** 64, -(2 ** 64)]:
+        assert_eq_type(float(n), runtime.eval(f"{n}", integer_conversion='i32'))
+        assert_eq_type(float(n), identity(n, integer_conversion='i32'))
+        assert_eq_type(float(n), runtime.eval(f"{n}", integer_conversion='safe'))
+        assert_eq_type(float(n), identity(n, integer_conversion='safe'))
 
 
 def test_strings(runtime):
@@ -22,7 +62,7 @@ def test_strings(runtime):
 
 
 def test_roundtrips(runtime, identity):
-    for v in ["abc", 1, 5.3, True, False, None,
+    for v in ["abc", 1, 1.0, 5.3, True, False, None,
               [], [2, 3.4, "x"],
               {}, {'a': 5, 'b': ['x', dict(c=None)]}]:
         assert runtime.call(identity, v, unwrap=True) == v
